@@ -54,6 +54,9 @@ reordering = True
 # inductor engine name
 dll_name = "inductor_engine.so"
 
+# inductor gnenerated file path
+file_path = ""
+
 # enable slow autotuning passes to select algorithms
 max_autotune = os.environ.get("TORCHINDUCTOR_MAX_AUTOTUNE") == "1"
 

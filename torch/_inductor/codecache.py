@@ -29,7 +29,7 @@ from importlib import abc
 from pathlib import Path
 from threading import Thread
 from time import sleep, time
-from typing import Any, Callable, Dict, List, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 import torch
 
@@ -41,10 +41,9 @@ _HERE = os.path.abspath(__file__)
 _TORCH_PATH = os.path.dirname(os.path.dirname(_HERE))
 
 if config.is_fbcode():
+    from torch._inductor.fb.logging import global_cache_log
     from triton.fb import build_paths
     from triton.fb.build import _run_build_command
-
-    from torch._inductor.fb.logging import global_cache_log
 else:
 
     def global_cache_log(*args, **kwargs):
@@ -273,8 +272,8 @@ def code_hash(code, extra=""):
     )
 
 
-def get_path(basename: str, extension: str):
-    subdir = os.path.join(cache_dir(), basename[1:3])
+def get_path(basename: str, extension: str, dirname: Optional[str] = None):
+    subdir = os.path.join(cache_dir(), dirname if dirname else basename)
     path = os.path.join(subdir, f"{basename}.{extension}")
     return basename, subdir, path
 
@@ -291,7 +290,7 @@ def write(
     content: Union[str, bytes], extension: str, extra="", hash_type: str = "code"
 ):
     key: str = get_hash(content, extra, hash_type)
-    basename, subdir, path = get_path(key, extension)
+    basename, subdir, path = get_path(key, extension, config.file_path)
     if not os.path.exists(subdir):
         os.makedirs(subdir, exist_ok=True)
     if not os.path.exists(path):
@@ -796,7 +795,7 @@ class AotCodeCache:
             with lock:
                 # Place the generated .so into a sub-folder with the full hex-hash to avoid
                 # any name collision.
-                output_so_dir = os.path.splitext(input_path)[0]
+                output_so_dir = os.path.join(cache_dir(), config.file_path)
                 if not os.path.exists(output_so_dir):
                     os.makedirs(output_so_dir, exist_ok=False)
                 so_name = f"{config.dll_name}.so"
