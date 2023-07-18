@@ -642,12 +642,50 @@ class {module_name}(torch.nn.Module):
         Return the Python code generated from the ``Graph`` underlying this
         ``GraphModule``.
         """
+
+        self.real_recompile()
         if not hasattr(self, '_code'):
             raise RuntimeError('Code has not been generated! Please report a bug to PyTorch')
         return self._code
 
+    @property
+    def in_spec(self):
+        self.real_recompile()
+        return getattr(self, "_in_spec", None)
+
+    @property
+    def out_spec(self):
+        self.real_recompile()
+        return getattr(self, "_out_spec", None)
+
     @compatibility(is_backward_compatible=True)
-    def recompile(self) -> PythonCode:
+    @classmethod
+    def recompile(cls):
+        cls.forward = cls._lazy_forward
+
+    @classmethod
+    def _needs_recompile(cls):
+        return cls.forward is cls._lazy_forward
+
+    def _lazy_forward(self, *args, **kwargs):
+        self._real_recompile()
+        assert not self._needs_recompile()
+        return self.forward(*args, **kwargs)
+
+    forward = _lazy_forward
+
+    def real_recompile(self):
+        """
+        A torch script safe wrapper around _real_recompile.
+        Call _real_recompile only if we have not done that yet after the last
+        change to the fx.Graph
+        """
+        # Jit scripting can not handle `_needs_recompile` or `_real_recompile`.
+        if not torch.jit.is_scripting():
+            if self._needs_recompile():
+                self._real_recompile()
+
+    def _real_recompile(self) -> PythonCode:
         """
         Recompile this GraphModule from its ``graph`` attribute. This should be
         called after editing the contained ``graph``, otherwise the generated
@@ -669,6 +707,7 @@ class {module_name}(torch.nn.Module):
         # In most cases, super().__call__ should be torch.nn.Module.__call__.
         # We do not want to hold a reference to Module.__call__ here; doing so will
         # bypass patching of torch.nn.Module.__call__ done while symbolic tracing.
+
         cls_call = cls.__call__ if "__call__" in vars(cls) else None
 
         if '_wrapped_call' not in vars(cls):
@@ -678,7 +717,6 @@ class {module_name}(torch.nn.Module):
             return self._wrapped_call(self, *args, **kwargs)
 
         cls.__call__ = call_wrapped
-
         return python_code
 
     # Passing Tracer as argument allows subclasses extending fx.GraphModule
@@ -713,7 +751,7 @@ class {module_name}(torch.nn.Module):
         code to regenerate the underlying ``Graph``
         """
         dict_without_graph = self.__dict__.copy()
-        python_code = self.recompile()
+        python_code = self._real_recompile()
         import_block = _format_import_block(python_code.globals, sys_importer)
         del dict_without_graph['_graph']
         return (reduce_graph_module, (dict_without_graph, import_block))
