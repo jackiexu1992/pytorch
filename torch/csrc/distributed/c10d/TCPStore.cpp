@@ -1,4 +1,5 @@
 #include <c10/util/irange.h>
+#include <torch/csrc/distributed/c10d/logging.h>
 #include <torch/csrc/distributed/c10d/TCPStore.hpp>
 
 #include <fcntl.h>
@@ -1098,6 +1099,10 @@ TCPStore::TCPStore(std::string host, const TCPStoreOptions& opts)
 
   if (opts.isServer) {
     server_ = detail::TCPServer::start(opts);
+    // server successfully started
+    C10D_DEBUG(
+      "The server has started on port = {}.",
+      server_->port());
 
     addr_.port = server_->port();
   } else {
@@ -1105,12 +1110,16 @@ TCPStore::TCPStore(std::string host, const TCPStoreOptions& opts)
   }
 
   client_ = detail::TCPClient::connect(addr_, opts);
+  // TCP connection established
+  C10D_DEBUG("TCP client connected to host {}:{}", addr_.host, addr_.port);
 
   if (opts.waitWorkers) {
     waitForWorkers();
   }
 
   callbackClient_ = detail::TCPCallbackClient::connect(addr_, opts);
+  // TCP CallbackClient connection established
+  C10D_DEBUG("TCP callback client connected to host {}:{}", addr_.host, addr_.port);
 }
 
 TCPStore::~TCPStore() = default;
